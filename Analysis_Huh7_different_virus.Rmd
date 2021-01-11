@@ -1,0 +1,502 @@
+---
+title: "MERS Proteomics"
+output: html_notebook
+---
+
+### clean environment
+```{r}
+rm(list=ls())
+```
+
+### set directory
+```{r setup}
+    knitr::opts_knit$set(root.dir = normalizePath("~/Desktop/Code-PHD/Proteomics_virus/")) 
+```
+
+```{r}
+library(ggplot2)
+library(limma)
+library(dplyr)
+library(xlsx)
+library(RColorBrewer)
+library(gplots)
+library(ggrepel)
+library(knitr)
+library(ggfortify)
+library(NormalyzerDE)
+library(ropls)
+library(stringr)
+opts_chunk$set(echo = TRUE)
+options(bitmapType="cairo")
+```
+
+```{r}
+library(ReactomePA)
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(xlsx)
+```
+
+
+```{r}
+source("src/usefull_functions.R")
+```
+
+## Filter for interferon
+```{r}
+antiviral <- read.delim("/home/flomik/Desktop/Code-PHD/Corona_projects/INF_Grant/data/databases/step_3/antiviral_mechanism_IFN.tsv")
+antiviral <- gsub(".* ", "", antiviral$MoleculeName)
+inf_alpha_beta <- read.delim("/home/flomik/Desktop/Code-PHD/Corona_projects/INF_Grant/data/databases/step_3/reactome_interferon_alpha_beta.tsv")
+inf_alpha_beta <- gsub(".* ", "", inf_alpha_beta$MoleculeName)
+inf_gamma <- read.delim("/home/flomik/Desktop/Code-PHD/Corona_projects/INF_Grant/data/databases/step_3/reactome_interferon_gamma.tsv")
+inf_gamma <- gsub(".* ", "", inf_gamma$MoleculeName)
+```
+
+```{r}
+inf <- unique(c(antiviral, inf_alpha_beta, inf_gamma))
+```
+
+
+## load results
+```{r}
+mers <- read.xlsx("/home/flomik/Desktop/Code-PHD/Proteomics_virus/results/MERS/DGE/MERS_UNINF_vs_MERS_DGE_results_filt.xlsx",1)
+sars_24 <- read.xlsx("/home/flomik/Desktop/Code-PHD/Proteomics_virus/results/SARS/DGE/SARS_UN24_vs_SA24_DGE_results_filt.xlsx",1)
+sars_48 <- read.xlsx("/home/flomik/Desktop/Code-PHD/Proteomics_virus/results/SARS/DGE/SARS_UN48_vs_SA48_DGE_results_filt.xlsx",1)
+covid <- read.xlsx("/home/flomik/Desktop/Code-PHD/Proteomics_virus/data/SARS-2/covid-19_proteomics_UNINF_vs_H48PI_DGE_results_filt.xlsx",1)
+```
+
+```{r}
+mers_2 <- mers[mers$Gene_name %in% inf, ]
+names(mers_2)[4] <- "logFC_MERS"
+mers_2 <- mers_2[,c(2,3,4)]
+sars_24_2 <- sars_24[sars_24$Gene_name %in% inf, ]
+names(sars_24_2)[3] <- "Gene_name_a"
+names(sars_24_2)[4] <- "logFC_SARS_24h"
+sars_24_2 <- sars_24_2[,c(2,3, 4)]
+sars_48_2 <- sars_48[sars_48$Gene_name %in% inf, ]
+names(sars_48_2)[3] <- "Gene_name_b"
+names(sars_48_2)[4] <- "logFC_SARS_48h"
+sars_48_2 <- sars_48_2[,c(2,3,4)]
+covid_2 <- covid[covid$Gene_name %in% inf, ]
+names(covid_2)[3] <- "Gene_name_c"
+names(covid_2)[4] <- "logFC_SARS_CoV2_48h"
+covid_2 <- covid_2[,c(2,3,4)]
+```
+
+```{r}
+data_heatmap <- merge(mers_2, sars_24_2, by = "Accession", all.x = TRUE, all.y = TRUE)
+data_heatmap <- merge(data_heatmap, sars_48_2, by = "Accession", all.x = TRUE, all.y = TRUE)
+data_heatmap <- merge(data_heatmap, covid_2, by = "Accession", all.x = TRUE, all.y = TRUE)
+```
+```{r}
+data_heatmap$Gene_name <- coalesce(data_heatmap$Gene_name, data_heatmap$Gene_name_a)
+data_heatmap$Gene_name <- coalesce(data_heatmap$Gene_name, data_heatmap$Gene_name_b)
+data_heatmap$Gene_name <- coalesce(data_heatmap$Gene_name, data_heatmap$Gene_name_c)
+data_heatmap$Gene_name_a <- NULL
+data_heatmap$Gene_name_b <- NULL
+data_heatmap$Gene_name_c <- NULL
+```
+
+```{r}
+data_heatmap$Pathway <- ifelse(data_heatmap$Gene_name %in% antiviral, "Antiviral mechanism by IFN-stimulated genes", NA)
+data_heatmap$Pathway <- ifelse(data_heatmap$Gene_name %in% inf_alpha_beta, "Interferon alpha/beta signaling", data_heatmap$Pathway)
+data_heatmap$Pathway <- ifelse(data_heatmap$Gene_name %in% inf_gamma, "Interferon gamma signaling", data_heatmap$Pathway)
+```
+
+```{r}
+data_MERS <- read.delim("/home/flomik/Desktop/Code-PHD/Proteomics_virus/processing/norm_files/MERS_norm_file.txt")
+data_SARS <- read.delim("/home/flomik/Desktop/Code-PHD/Proteomics_virus/processing/norm_files/SARS_norm_file.txt")
+data_covid <- read.delim("/home/flomik/Desktop/Code-PHD/Proteomics_virus/data/SARS-2/covid-19_proteomics_norm_file.txt")
+```
+```{r}
+data_MERS <- data_MERS[data_MERS$X %in% data_heatmap$Accession,]
+data_SARS <- data_SARS[data_SARS$X %in% data_heatmap$Accession,]
+data_covid <- data_covid[data_covid$X %in% data_heatmap$Accession,]
+data_heatmap_2 <- merge(data_MERS, data_SARS, by = "X", all.x = TRUE, all.y = TRUE)
+data_heatmap_2 <- merge(data_heatmap_2, data_covid, by = "X", all.x = TRUE, all.y = TRUE)
+names(data_heatmap_2)[1] <- "Accession"
+```
+
+
+
+```{r}
+data_heatmap <- merge(data_heatmap_2, data_heatmap, by = "Accession", all.x = TRUE, all.y = TRUE)
+```
+
+```{r}
+names(data_heatmap)
+```
+```{r}
+write.csv(data_heatmap, "processing/data_virus_all_infos.csv")
+```
+
+```{r}
+data_heatmap_3 <- data_heatmap[,c(2, 4, 6, 3, 5, 7, 8, 10, 12, 9, 11, 13, 14, 16, 18, 15,17, 19, 20, 21, 22, 26, 27, 28)]
+```
+
+```{r}
+write.csv(data_heatmap_3, "processing/data_virus.csv")
+```
+```{r}
+group <- c(rep("mers", 6), rep("sars", 12), rep("cov", 6))
+condition <- c(rep("Mock 24h", 3), rep("MERS 24h", 3), rep("Mock 24h", 3), rep("SARS 24h", 3), rep("Mock 48h", 3), rep("SARS 48h", 3), rep("Mock 24h", 3), rep("SARS-CoV-2 48h", 3))
+```
+
+```{r}
+rownames(data_heatmap_3) <- data_heatmap$Gene_name
+rownames(data_heatmap) <- data_heatmap$Gene_name
+```
+
+```{r}
+library(circlize)
+library(ComplexHeatmap)
+col_fun1 = colorRamp2(c(-2,-1.7,-0.7, 0,0.7,1.7, 2), c("#7F7F00","#B2B200" ,"#E5E500","white","#BF7FBF","#993299","#590059"))
+col_fun2 = colorRamp2(c(-2,  -0.1 ,0,  0.5, 3.1), c("#007f7f", "#00cccc","white","#ff0000", "#cc0000"))
+```
+
+```{r}
+#data_heatmap_3 <- t(scale(t(data_heatmap_3)))
+```
+```{r}
+#data_heatmap_3 <- log2(data_heatmap_3)
+```
+
+```{r}
+pdf("results/Heatmat_comparisons_viruses.pdf", width = 10, height = 18)
+ht = Heatmap(as.matrix(data_heatmap_3),
+             column_order = colnames(data_heatmap_3),
+             row_order = rownames(data_heatmap_3),
+             column_split = group,
+             row_split = data_heatmap$Pathway, row_title_rot = 0,
+             )
+ht
+dev.off()
+```
+```{r}
+pdf("results/Heatmat_comparisons_viruses_fold_change.pdf", width = 4, height = 18)
+ht = Heatmap(as.matrix(data_heatmap[,c(33:36)]),
+             column_order = colnames(data_heatmap)[c(33:36)],
+             row_order = rownames(data_heatmap),
+             column_title_gp = gpar(fill = "white"),
+             row_title_rot = 0,
+             border = FALSE,
+             column_gap = unit(2, "mm")
+             )
+ht
+dev.off()
+```
+
+
+```{r}
+data_viruses <- data.frame(data_heatmap[,c(33:36)])
+data_viruses$logFC_SARS_CoV2_24h <- NA
+data_viruses <- data_viruses[,c(2, 3, 5, 4, 1)]
+```
+```{r}
+names(data_viruses)
+```
+```{r}
+min(data_viruses, na.rm = TRUE)
+max(data_viruses, na.rm = TRUE)
+```
+```{r}
+names(data_viruses)
+```
+```{r}
+names_virus <- c("SARS-CoV 24hpi", "SARS-CoV 48hpi", "SARS-CoV2 24hpi", "SARS-CoV2 48hpi", "MERS-CoV2")
+```
+
+```{r}
+pdf("results/figures/Heatmat_comparisons_viruses_fold_change_2.pdf", width = 4, height = 18)
+ht = Heatmap(as.matrix(data_viruses),
+             column_order = colnames(data_viruses),
+             row_order = rownames(data_viruses),
+             column_title_gp = gpar(fill = "white"),
+             row_title_rot = 0,
+             border = FALSE,
+             column_gap = unit(2, "mm"),
+             col = col_fun2,
+             column_labels = names_virus)
+ht
+dev.off()
+```
+```{r}
+write.csv(data_viruses, "processing/data_virus.csv")
+```
+
+```{r}
+library(VennDiagram)
+library(grid)
+```
+```{r}
+library(eulerr)
+```
+```{r}
+pdf("Ven_diagram_overlap_2.pdf")
+VennDiag <- euler(c("SARS-CoV" = 3, "SARS-CoV-2" = 31, "MERS-CoV"= 15,
+                    "SARS-CoV&SARS-CoV-2" = 2,
+                    "MERS-CoV&SARS-CoV-2" = 13))
+plot(VennDiag, counts = TRUE, font=1, cex=1, alpha=0.5,
+     fill=c("dodgerblue4", "cornsilk4","darkgoldenrod1"), quantities = TRUE)
+dev.off()
+```
+```{r}
+pdf("Ven_diagram_overlap_up.pdf")
+VennDiag <- euler(c("SARS-CoV" = 3, "SARS-CoV-2" = 18, "MERS-CoV"= 13,
+                    "SARS-CoV&SARS-CoV-2" = 2,
+                    "MERS-CoV&SARS-CoV-2" = 6))
+plot(VennDiag, counts = TRUE, font=1, cex=1, alpha=0.5,
+     fill=c("dodgerblue4", "cornsilk4","darkgoldenrod1"), quantities = TRUE)
+dev.off()
+```
+```{r}
+pdf("Ven_diagram_overlap_down.pdf")
+VennDiag <- euler(c("SARS-CoV" = 0, "SARS-CoV-2" = 18, "MERS-CoV"= 7,
+                    "SARS-CoV&SARS-CoV-2" = 0,
+                    "MERS-CoV&SARS-CoV-2" = 2))
+plot(VennDiag, counts = TRUE, font=1, cex=1, alpha=0.5,
+     fill=c("dodgerblue4", "cornsilk4","darkgoldenrod1"), quantities = TRUE)
+dev.off()
+```
+
+```{r}
+test <- data_viruses
+```
+```{r}
+test$Gene_name <- rownames(test)
+```
+
+```{r}
+names(test)
+```
+```{r}
+test <- test[,c(2, 4, 5, 6)]
+```
+
+
+```{r}
+library(reshape2)
+```
+
+```{r}
+test_2 <- melt(test, id.vars = c("Gene_name"))
+```
+
+
+```{r}
+n <- 64
+```
+
+```{r}
+test_2$position <- c(paste0("C",rep(1, n)),paste0("C",rep(2, n)), paste0("C",rep(3, n)))
+```
+
+```{r}
+names(test_2)
+```
+```{r}
+test_2$group <- rep(paste0("G", c(1:n), 3))
+```
+```{r}
+test_2$sign <- ifelse(test_2$value > 0 , "up", "down")
+```
+
+```{r}
+test_2$value <- ifelse(test_2$value > 0, test_2$value, test_2$value*-1)
+```
+
+```{r}
+position_2 <- rev(rownames(data_viruses))
+```
+```{r}
+names(test_2)
+```
+```{r}
+test_2$group <- ifelse(is.na(test_2$value), NA, test_2$group)
+test_2$position <- ifelse(is.na(test_2$value), NA, test_2$position)
+```
+
+```{r}
+similar <- c("STAT2", "EIF4A2")
+```
+
+```{r}
+list_similar_up <- test[which(test$logFC_SARS_CoV2_48h > 0 &  test$logFC_MERS > 0),]
+list_similar_down <- test$Gene_name[which(test$logFC_SARS_CoV2_48h < 0 &  test$logFC_MERS < 0)]
+```
+```{r}
+list_similar <- c(similar, list_similar_up, list_similar_down)
+```
+
+```{r}
+test_2$group <- ifelse(test_2$Gene_name %in% list_similar, test_2$group, NA)
+```
+
+```{r}
+pdf("test_bubble_plot_genes.pdf", height = 14, width = 2)
+a <- ggplot(test_2, aes(x = position, y = Gene_name, group = group))+ scale_x_discrete(labels=c("C1" = "SARS 48hpi","C2" = "SARS-CoV-2 48hpi","C3" = "MERS 24hpi"))+ theme_minimal()+ geom_point(size = 2.5)+ 
+  labs(title="", x="", y="", fill="") + scale_y_discrete(limits = position_2)+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+ 
+  scale_size_continuous(range = c(0, 7))+ geom_line(color = "black")
+a <- a + coord_cartesian(xlim = c(0, 3.5), expand = FALSE)
+a
+dev.off()
+```
+
++ geom_line(aes(group=factor(group),size=1))
+```{r}
+
+```
+
+
+```{r}
+table <- comp1
+table$value <- 50
+table <- table[order(table$Adjusted.P.value, decreasing = TRUE),]
+table$color <- colfunc(11)
+table$Term <- as.vector(table$Term)
+table$Term <- firstup(table$Term)
+position <- table$Term
+```
+
+```{r}
+a <- ggplot(table, aes(x = value, y = Term, size = Overlap, color = color))+ geom_point()+ scale_x_continuous(limits=c(49, 51))+
+  labs(size ="Number of proteins")
+a + theme(axis.line=element_blank(),axis.text.x=element_blank(),axis.ticks=element_blank(),
+          axis.title.x=element_blank(),
+          axis.title.y=element_blank(),
+          panel.background=element_blank(),panel.border=element_blank(),panel.grid.major=element_blank(),
+          panel.grid.minor=element_blank(),plot.background=element_blank(), axis.text.y = element_text(size=12, color = "black"))+ coord_cartesian(xlim = c(49, 50.05), expand = TRUE) + scale_y_discrete(limits = position, position = "right")+ 
+    scale_size_continuous(range = c(3, 8))+ scale_color_manual(values=rev(colfunc(11)))+ guides(color = FALSE)
+
+#a < a + scale_color_gradient2()
+
+ggsave("results/bubble_plot_metabolism_R1_R4.pdf")
+```
+
+
+```{r}
+mers <- bitr(mers$Gene_name, fromType = "SYMBOL", toType = c("ENTREZID"), OrgDb = org.Hs.eg.db)
+sars_24 <- bitr(sars_24$Gene_name, fromType = "SYMBOL", toType = c("ENTREZID"), OrgDb = org.Hs.eg.db)
+sars_48 <- bitr(sars_48$Gene_name, fromType = "SYMBOL", toType = c("ENTREZID"), OrgDb = org.Hs.eg.db)
+covid <- bitr(covid$Gene_name, fromType = "SYMBOL", toType = c("ENTREZID"), OrgDb = org.Hs.eg.db)
+```
+```{r}
+samples <- list(MERS = mers$ENTREZID, SARS24 = sars_24$ENTREZID, SARS48 = sars_48$ENTREZID, COV248 = covid$ENTREZID)
+```
+
+```{r}
+res <- compareCluster(samples, fun="enrichPathway")
+```
+```{r}
+pdf("results/Comparison_pathways_huh7_virus.pdf", width = 12)
+dotplot(res)
+dev.off()
+```
+
+```{r}
+library(scales)
+```
+
+## volcano plot
+```{r}
+mers <- read.xlsx("/home/flomik/Desktop/Code-PHD/Proteomics_virus/results/MERS/DGE/MERS_UNINF_vs_MERS_DGE_results.xlsx",1)
+sars_24 <- read.xlsx("/home/flomik/Desktop/Code-PHD/Proteomics_virus/results/SARS/DGE/SARS_UN24_vs_SA24_DGE_results.xlsx",1)
+sars_48 <- read.xlsx("/home/flomik/Desktop/Code-PHD/Proteomics_virus/results/SARS/DGE/SARS_UN48_vs_SA48_DGE_results.xlsx",1)
+#covid <- read.xlsx("/home/flomik/Desktop/Code-PHD/Proteomics_virus/data/SARS-2/covid-19_proteomics_UNINF_vs_H48PI_DGE_results.xlsx",1)
+covid <- read.xlsx("/home/flomik/Desktop/Code-PHD/Corona_projects/INF_Grant/data/Neogi/DGE/covid-19_proteomics_UNINF_vs_H48PI_DGE_results.xlsx", 1)
+```
+
+```{r}
+max(tt$logFC)
+```
+
+```{r}
+#' Save figure as PDF in results
+#'
+#' @param file 
+#' @param name_ana name comparison
+#' @param indice_Gene
+#' @param indice_LogFC 
+#' @param indice_FDR 
+#' @param width width of the figure
+pretty_volcano <- function(file, name_ana, indice_Gene, indice_LogFC, indice_FDR){
+  tt <- file
+  tt$color <- NA
+  print(ncol(tt))
+  for (i in 1:nrow(tt)){
+    if(tt[i, indice_LogFC] > 0.3 & tt[i, indice_FDR] < 0.05){
+      print(tt[i, indice_Gene])
+      tt[i, ncol(tt)] <- "up_regulated"
+    }
+    if(tt[i, indice_LogFC] < -0.3 & tt[i, indice_FDR] < 0.05){
+      print(tt[i, indice_Gene])
+      tt[i, ncol(tt)] <- "down_regulated"
+    }
+    if(tt[i, indice_FDR] > 0.05){
+      tt[i, ncol(tt)] <- "NS"
+      tt[i, indice_Gene] <- NA
+    }
+  }
+  tt$color[is.na(tt$color)] <- "significant"
+  tt$Gene_name[tt$color == "significant"] <- NA
+  cols <- c("up_regulated" = "#cc0000", "down_regulated" = "#009933", "NS" = "darkgrey", "significant" = "#ffff99")
+  vol <- ggplot(tt, aes(x = logFC, y = -log10(adj.P.Val), colour = logFC))+ 
+  geom_point(size=2, alpha = 1, na.rm = T, aes(colour=logFC, fill=logFC), 
+  shape = 21,size = 12,colour = "black")+
+  scale_fill_gradientn(colours=c("#008000","#7fbf7f","white","#ff6666","#cc0000"),
+                         values=rescale(c(min(tt$logFC),min(tt$logFC)/4, 0,max(tt$logFC)/4, max(tt$logFC))), 
+                         space = "Lab")+ 
+  theme(legend.title=element_text(size=2),legend.text=element_text(size=2),
+        legend.key.size=unit(0.7,"line"),plot.title = element_text(hjust = 0.5),
+        axis.title.y=element_text(size=25),axis.title.x=element_text(size=25),
+        axis.text.y=element_text(size=25),axis.text.x=element_text(size=25)) +
+  labs(x="Log2 Fold Change",y="-log10 (adj.P.Val)")+
+  geom_text_repel(aes(label = Gene_name),size=2,label.size = 0.1, color = "black", xlim = c(NA, Inf),
+    # Do not repel from top or bottom edges.
+    ylim = c(-Inf, Inf))+ theme_classic()
+
+  print(vol)
+  path_fig <- paste0("results/volcano_plots/", name_ana, "_volcano_plot_INF.pdf")
+  ggsave(path_fig, width = 4, height = 3)
+  return(tt)
+
+}
+```
+legend.title = element_text( size=2), legend.text=element_text(size=2)
+
++scale_fill_gradient2(low = "#014400",
+midpoint = 0,
+mid = "white",
+high = "#7f0000",
+space="Lab")
+                         
++ scale_fill_gradient2(midpoint = 0, low = "#003300", mid = "#ffffcc",
+                            high = "#800000", space = "Lab" )
+## Filter for interferon
+```{r}
+antiviral <- read.delim("/home/flomik/Desktop/Code-PHD/Corona_projects/INF_Grant/data/databases/step_3/antiviral_mechanism_IFN.tsv")
+antiviral <- gsub(".* ", "", antiviral$MoleculeName)
+inf_alpha_beta <- read.delim("/home/flomik/Desktop/Code-PHD/Corona_projects/INF_Grant/data/databases/step_3/reactome_interferon_alpha_beta.tsv")
+inf_alpha_beta <- gsub(".* ", "", inf_alpha_beta$MoleculeName)
+inf_gamma <- read.delim("/home/flomik/Desktop/Code-PHD/Corona_projects/INF_Grant/data/databases/step_3/reactome_interferon_gamma.tsv")
+inf_gamma <- gsub(".* ", "", inf_gamma$MoleculeName)
+```
+
+```{r}
+inf <- unique(c(antiviral, inf_alpha_beta, inf_gamma))
+```
+
+```{r}
+mers_2 <- mers[mers$Gene_name %in% inf, ]
+sars_24_2 <- sars_24[sars_24$Gene_name %in% inf, ]
+sars_48_2 <- sars_48[sars_48$Gene_name %in% inf, ]
+covid_2 <- covid[covid$Gene_name %in% inf, ]
+```
+
+```{r}
+tt <- pretty_volcano(mers_2, "MERS-CoV 24hpi 2", 3, 4, 8)
+#tt <- pretty_volcano(sars_24_2, "SARS-CoV 24hpi 2", 3, 4, 8)
+tt <- pretty_volcano(sars_48_2, "SARS-CoV 48hpi 2", 3, 4, 8)
+tt <- pretty_volcano(covid_2, "SARS-CoV2 48hpi 2", 3, 4, 8)
+```
+

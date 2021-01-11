@@ -1,0 +1,152 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+### clean environment
+```{r}
+rm(list=ls())
+```
+
+### set directory
+```{r setup}
+    knitr::opts_knit$set(root.dir = normalizePath("~/Desktop/Code-PHD/Proteomics_virus/")) 
+```
+
+```{r}
+library(ggplot2)
+library(limma)
+library(dplyr)
+library(xlsx)
+library(RColorBrewer)
+library(gplots)
+library(ggrepel)
+library(knitr)
+library(ggfortify)
+library(NormalyzerDE)
+library(ropls)
+library(stringr)
+opts_chunk$set(echo = TRUE)
+options(bitmapType="cairo")
+```
+
+
+```{r}
+data <- read.csv("processing/data_virus_all_infos.csv")
+```
+
+```{r}
+names(data)
+```
+
+
+## order columns
+```{r}
+data$X <- NULL
+```
+## SARS
+```{r}
+data_SARS <-data[,c(8, 10, 12, 9, 11, 13, 14, 16, 18, 15,17, 19, 32, 34, 35, 37)]
+data_SARS <- data_SARS[!is.na(data_SARS$UN24_1),]
+```
+
+```{r}
+data_SARS[,c(1:12)] <- data.frame(t(scale(t(data_SARS[,c(1:12)]))))
+```
+
+data_ace2
+## MERS
+```{r}
+data_MERS <-data[,c(2, 4, 6, 3, 5, 7, 32, 33, 37)]
+data_MERS <- data_MERS[!is.na(data_MERS$MERS_1),]
+```
+
+```{r}
+data_MERS[,c(1:6)] <- data.frame(t(scale(t(data_MERS[,c(1:6)]))))
+```
+
+
+## Heatmap SARS
+```{r}
+library(circlize)
+library(ComplexHeatmap)
+col_fun_2 = colorRamp2(c(-1.5,  - 0.001 ,0,  0.001, 1.5), c("blue", "#b3ccff","white","#ff9999", "red"))
+col_fun1 = colorRamp2(c(-2,-1,-0.5, 0,0.5,1,2), c("#7F7F00","#B2B200" ,"#E5E500","white","#BF7FBF","#993299","#590059"))
+col_fun = colorRamp2(c(-2, 0, 2), c("green", "white", "red"))
+
+# define associated colors
+c_t0 <- "#B1A78C"
+c_t24 <- "#687E8A"
+c_t48 <- "#41607D"
+c_t02 <- "#B1A78C"
+```
+
+```{r}
+condition <- factor(c(rep("Mock 24h", 3), rep("24hpi", 3), rep("Mock 48h", 3), rep("48hpi", 3)), levels = c("Mock 24h", "24hpi", "Mock 48h", "48hpi"))
+```
+```{r}
+rownames(data_SARS) <- data_SARS$Gene_name
+```
+
+```{r}
+pdf("results/figures/Heatmat_SARS_IFN_proteomics.pdf", width = 10, height = 18)
+ht = Heatmap(as.matrix(data_SARS[,c(1:12)]),
+             col = col_fun1,
+             show_row_names = TRUE,
+             column_order = colnames(data_SARS[,c(1:12)]),
+             show_column_names = FALSE,
+             column_split = condition,
+             row_split = data_SARS$Pathway,
+             row_title_rot = 0,
+             column_title_gp = gpar(fill = c(c_t0, c_t24, c_t02, c_t48)),
+             border = FALSE,
+             column_gap = unit(2, "mm"), 
+             right_annotation = rowAnnotation(Mock_H24 = data_SARS$logFC_SARS_24h,
+                                              Mock_H48 = data_SARS$logFC_SARS_48h,
+                                    
+                                              col = list(
+                                                         Mock_H24 = col_fun_2,
+                                                         Mock_H48 = col_fun_2
+                                                         ),  show_legend = TRUE, gp = gpar(col = "grey")
+             ))
+
+ht_list = ht
+
+draw(ht_list)
+dev.off()
+```
+
+```{r}
+condition <- factor(c(rep("Mock", 3), rep("24hpi", 3)), levels = c("Mock", "24hpi"))
+```
+```{r}
+rownames(data_MERS) <- data_MERS$Gene_name
+```
+
+
+```{r}
+pdf("results/figures/Heatmat_MERS_IFN_proteomics.pdf", width = 8.5, height = 18)
+ht = Heatmap(as.matrix(data_MERS[,c(1:6)]),
+             col = col_fun1,
+             show_row_names = TRUE,
+             column_order = colnames(data_MERS[,c(1:6)]),
+             show_column_names = FALSE,
+             column_split = condition,
+             row_split = data_MERS$Pathway,
+             row_title_rot = 0,
+             column_title_gp = gpar(fill = c(c_t0, c_t24)),
+             border = FALSE,
+             column_gap = unit(2, "mm"), 
+             right_annotation = rowAnnotation(Mock_H24 = data_MERS$logFC_MERS,
+                                              col = list(
+                                                         Mock_H24 = col_fun_2
+                                                         ),  show_legend = TRUE, gp = gpar(col = "grey")
+             ))
+
+ht_list = ht
+
+draw(ht_list)
+dev.off()
+```
+

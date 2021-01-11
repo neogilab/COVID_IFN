@@ -1,0 +1,314 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+### clean environment
+```{r}
+rm(list=ls())
+```
+
+### set directory
+```{r setup}
+    knitr::opts_knit$set(root.dir = normalizePath("~/Desktop/Code-PHD/Proteomics_virus/")) 
+```
+
+
+```{r}
+library(xlsx)
+```
+
+## load proteins names
+```{r}
+mers_virus <- read.xlsx("/home/flomik/Desktop/Code-PHD/Proteomics_virus/data/virus_proteins/MERS_TMT_only_MERS_DB_raw.xlsx", 1)
+sars_virus <- read.xlsx("/home/flomik/Desktop/Code-PHD/Proteomics_virus/data/virus_proteins/SARS_TMT_only_SARS1_DB_raw.xlsx", 1)
+```
+
+```{r}
+mers_virus$Accession
+sars_virus$Accession
+```
+## load dge levels
+```{r}
+mers <- read.xlsx("/home/flomik/Desktop/Code-PHD/Proteomics_virus/results/MERS/DGE/MERS_UNINF_vs_MERS_DGE_results.xlsx",1)
+sars_24 <- read.xlsx("/home/flomik/Desktop/Code-PHD/Proteomics_virus/results/SARS/DGE/SARS_UN24_vs_SA24_DGE_results.xlsx",1)
+sars_48 <- read.xlsx("/home/flomik/Desktop/Code-PHD/Proteomics_virus/results/SARS/DGE/SARS_UN48_vs_SA48_DGE_results.xlsx",1)
+#covid <- read.xlsx("/home/flomik/Desktop/Code-PHD/Proteomics_virus/data/SARS-2/covid-19_proteomics_UNINF_vs_H48PI_DGE_results.xlsx",1)
+#covid <- read.xlsx("/home/flomik/Desktop/Code-PHD/Corona_projects/INF_Grant/data/Neogi/DGE/covid-19_proteomics_UNINF_vs_H48PI_DGE_results.xlsx", 1)
+```
+
+
+
+## load data
+```{r}
+data_MERS <- read.delim("/home/flomik/Desktop/Code-PHD/Proteomics_virus/processing/norm_files/MERS_norm_file.txt")
+data_SARS <- read.delim("/home/flomik/Desktop/Code-PHD/Proteomics_virus/processing/norm_files/SARS_norm_file.txt")
+```
+
+## SARS
+```{r}
+data <- data_SARS[data_SARS$X %in% sars_virus$Accession,]
+```
+```{r}
+data$X
+```
+```{r}
+data$Gene_name <- c("N", "M", "S", "3a", "9b")
+```
+
+```{r}
+data <- data[,c(2, 4, 6, 3, 5, 7, 8, 10, 12, 9, 11, 13, 14)]
+```
+
+```{r}
+library(reshape2)
+```
+
+```{r}
+data_2 <- melt(data, id.vars = "Gene_name")
+data_2$Condition <- c(rep("Mock 24h", 15), rep("SARS-CoV-2 24hpi", 15), rep("Mock 48h", 15), rep("SARS-CoV-2 48hpi", 15))
+```
+
+```{r}
+#+++++++++++++++++++++++++
+# Function to calculate the mean and the standard deviation
+  # for each group
+#+++++++++++++++++++++++++
+# data : a data frame
+# varname : the name of a column containing the variable
+  #to be summariezed
+# groupnames : vector of column names to be used as
+  # grouping variables
+data_summary <- function(data, varname, groupnames){
+  require(plyr)
+  summary_func <- function(x, col){
+    c(mean = mean(x[[col]], na.rm=TRUE),
+      sd = sd(x[[col]], na.rm=TRUE))
+  }
+  data_sum<-ddply(data, groupnames, .fun=summary_func,
+                  varname)
+  data_sum <- rename(data_sum, c("mean" = varname))
+ return(data_sum)
+}
+```
+
+```{r}
+data_virus <- data_summary(data_2, varname="value", 
+                    groupnames=c("Gene_name", "Condition"))
+# Convert dose to a factor variable
+#data_virus$variable =as.factor(data_virus$variable)
+head(data_virus)
+```
+```{r}
+library(ggplot2)
+```
+```{r}
+table <- data.frame(Gene_name = rep(unique(data_virus$Gene_name), each = 2), 
+                    Difference_means = NA,
+                    Pooled_sd = NA,
+                    time = rep(c("24h", "48h"), 5))
+```
+
+```{r}
+dge_sars <- sars_24[sars_24$Accession %in% sars_virus$Accession,]
+```
+```{r}
+data_virus <- data_virus[c(3, 1, 4, 2,
+             7, 5, 8, 6,
+             11, 9, 12, 10,
+             15, 13, 16, 14,
+             19, 17, 20, 18),]
+```
+
+```{r}
+table[1,2] <- data_virus[1,3]- data_virus[2,3]
+table[2,2] <- data_virus[3,3]- data_virus[4,3]
+table[3,2] <- data_virus[5,3]- data_virus[6,3]
+table[4,2] <- data_virus[7,3]- data_virus[8,3]
+table[5,2] <- data_virus[9,3]- data_virus[10,3]
+table[6,2] <- data_virus[11,3]- data_virus[12,3]
+table[7,2] <- data_virus[13,3]- data_virus[14,3]
+table[8,2] <- data_virus[15,3]- data_virus[16,3]
+table[9,2] <- data_virus[17,3]- data_virus[18,3]
+table[10,2] <- data_virus[19,3]- data_virus[20,3]
+```
+
+```{r}
+table[1,3] <- sqrt((3-1)*data_virus[1,4]^2+(3-1)*data_virus[2,4]^2)/(3+3-2)
+table[2,3] <- sqrt((3-1)*data_virus[3,4]^2+(3-1)*data_virus[4,4]^2)/(3+3-2)
+table[3,3] <- sqrt((3-1)*data_virus[5,4]^2+(3-1)*data_virus[6,4]^2)/(3+3-2)
+table[4,3] <- sqrt((3-1)*data_virus[7,4]^2+(3-1)*data_virus[8,4]^2)/(3+3-2)
+table[5,3] <- sqrt((3-1)*data_virus[9,4]^2+(3-1)*data_virus[10,4]^2)/(3+3-2)
+table[6,3] <- sqrt((3-1)*data_virus[11,4]^2+(3-1)*data_virus[12,4]^2)/(3+3-2)
+table[7,3] <- sqrt((3-1)*data_virus[13,4]^2+(3-1)*data_virus[14,4]^2)/(3+3-2)
+table[8,3] <- sqrt((3-1)*data_virus[15,4]^2+(3-1)*data_virus[16,4]^2)/(3+3-2)
+table[9,3] <- sqrt((3-1)*data_virus[17,4]^2+(3-1)*data_virus[18,4]^2)/(3+3-2)
+table[10,3] <- sqrt((3-1)*data_virus[19,4]^2+(3-1)*data_virus[20,4]^2)/(3+3-2)
+```
+
+
+```{r}
+pdf("results/virus_levels/SARS_virus_proteins_levels.pdf")
+a<- ggplot(data_virus, aes(x=Gene_name, y=value, fill = Condition))+
+  geom_errorbar(aes(ymin=value-sd, ymax=value+sd), width=.2,
+                 position=position_dodge(.9))+ theme_classic()+
+  geom_bar(position=position_dodge(), color="black", stat = "identity", alpha = 1)+
+  scale_fill_manual(values =c("#ffb3ba", "#ffdfba", "#baffc9", "#bae1ff"))+ 
+  theme(legend.title=element_text(size=10),legend.text=element_text(size=10),
+        legend.key.size=unit(0.7,"line"),plot.title = element_text(hjust = 0.5),
+        axis.title.y=element_text(size=10, color = "black"),
+        axis.text.y=element_text(size=10, color = "black"), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=10, color = "black"))+xlab("Baseline Subtraction (Infected-Mock)")
+
+a
+dev.off()
+```
+```{r}
+pdf("results/virus_levels/SARS_virus_proteins_levels_difference.pdf")
+a<- ggplot(table, aes(x=Gene_name, y=Difference_means, fill = time))+
+  geom_errorbar(aes(ymin=Difference_means-Pooled_sd, ymax=Difference_means+Pooled_sd), width=.2,
+                 position=position_dodge(.9))+ theme_classic()+
+  geom_bar(position=position_dodge(), color="black", stat = "identity", alpha = 1)+
+  scale_fill_manual(values =c("#c0d5d5", "#96baba"))+ 
+  theme(legend.title=element_text(size=10),legend.text=element_text(size=10),
+        legend.key.size=unit(0.7,"line"),plot.title = element_text(hjust = 0.5),
+        axis.title.y=element_text(size=10, color = "black"),axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=10, color = "black"),
+        axis.text.y=element_text(size=10, color = "black"))+xlab("Baseline Subtraction (Infected-Mock)")
+
+a
+dev.off()
+```
+
+## MERS
+
+```{r}
+data <- data_MERS[data_MERS$X %in% mers_virus$Accession, ]
+```
+```{r}
+names(data)
+```
+
+```{r}
+data <- data[,c(1, 2, 4, 6, 3, 5, 7)]
+```
+
+```{r}
+data$X <- NULL
+```
+```{r}
+data$Gene_name <- c("N", "S", "2'-O-methyltransferase", "3C-like proteinase", "M", "orf4b", "ns3b", "orf8b", "orf5", "E")
+```
+```{r}
+library(reshape2)
+```
+
+```{r}
+data_2 <- melt(data, id.vars = "Gene_name")
+data_2$Condition <- c(rep("UNINF", 30),rep("MERS", 30))
+```
+
+```{r}
+#+++++++++++++++++++++++++
+# Function to calculate the mean and the standard deviation
+  # for each group
+#+++++++++++++++++++++++++
+# data : a data frame
+# varname : the name of a column containing the variable
+  #to be summariezed
+# groupnames : vector of column names to be used as
+  # grouping variables
+data_summary <- function(data, varname, groupnames){
+  require(plyr)
+  summary_func <- function(x, col){
+    c(mean = mean(x[[col]], na.rm=TRUE),
+      sd = sd(x[[col]], na.rm=TRUE))
+  }
+  data_sum<-ddply(data, groupnames, .fun=summary_func,
+                  varname)
+  data_sum <- rename(data_sum, c("mean" = varname))
+ return(data_sum)
+}
+```
+
+```{r}
+data_virus <- data_summary(data_2, varname="value", 
+                    groupnames=c("Gene_name", "Condition"))
+# Convert dose to a factor variable
+#data_virus$variable =as.factor(data_virus$variable)
+head(data_virus)
+```
+```{r}
+library(ggplot2)
+```
+```{r}
+table <- data.frame(Gene_name = unique(data_virus$Gene_name), 
+                    Difference_means = NA,
+                    Pooled_sd = NA)
+```
+
+```{r}
+dge_MERS <- mers[mers$Accession %in% mers_virus$Accession,]
+```
+
+```{r}
+table[1,2] <- data_virus[1,3]- data_virus[2,3]
+table[2,2] <- data_virus[3,3]- data_virus[4,3]
+table[3,2] <- data_virus[5,3]- data_virus[6,3]
+table[4,2] <- data_virus[7,3]- data_virus[8,3]
+table[5,2] <- data_virus[9,3]- data_virus[10,3]
+table[6,2] <- data_virus[11,3]- data_virus[12,3]
+table[7,2] <- data_virus[13,3]- data_virus[14,3]
+table[8,2] <- data_virus[15,3]- data_virus[16,3]
+table[9,2] <- data_virus[17,3]- data_virus[18,3]
+table[10,2] <- data_virus[19,3]- data_virus[20,3]
+```
+
+s=sqrt((3-1)*data_virus[1,4]^2+(3-1)*data_virus[2,4]^2)/(3+3-2))
+
+```{r}
+table[1,3] <- sqrt((3-1)*data_virus[1,4]^2+(3-1)*data_virus[2,4]^2)/(3+3-2)
+table[2,3] <- sqrt((3-1)*data_virus[3,4]^2+(3-1)*data_virus[4,4]^2)/(3+3-2)
+table[3,3] <- sqrt((3-1)*data_virus[5,4]^2+(3-1)*data_virus[6,4]^2)/(3+3-2)
+table[4,3] <- sqrt((3-1)*data_virus[7,4]^2+(3-1)*data_virus[8,4]^2)/(3+3-2)
+table[5,3] <- sqrt((3-1)*data_virus[9,4]^2+(3-1)*data_virus[10,4]^2)/(3+3-2)
+table[6,3] <- sqrt((3-1)*data_virus[11,4]^2+(3-1)*data_virus[12,4]^2)/(3+3-2)
+table[7,3] <- sqrt((3-1)*data_virus[13,4]^2+(3-1)*data_virus[14,4]^2)/(3+3-2)
+table[8,3] <- sqrt((3-1)*data_virus[15,4]^2+(3-1)*data_virus[16,4]^2)/(3+3-2)
+table[9,3] <- sqrt((3-1)*data_virus[17,4]^2+(3-1)*data_virus[18,4]^2)/(3+3-2)
+table[10,3] <- sqrt((3-1)*data_virus[19,4]^2+(3-1)*data_virus[20,4]^2)/(3+3-2)
+```
+
+```{r}
+library(ggthemes)
+```
+
+```{r}
+pdf("results/virus_levels/MERS_virus_proteins_levels.pdf")
+a<- ggplot(data_virus, aes(x=Gene_name, y=value, fill = Condition))+
+  geom_errorbar(aes(ymin=value-sd, ymax=value+sd), width=.2,
+                 position=position_dodge(.9))+
+  geom_bar(position=position_dodge(), color="black", stat = "identity", alpha = 1)+
+  scale_fill_manual(values =c("#ffb3ba", "#ffdfba", "#baffc9", "#bae1ff"))+ theme_classic()+ 
+  theme(legend.title=element_text(size=10),legend.text=element_text(size=10),
+        legend.key.size=unit(0.7,"line"),plot.title = element_text(hjust = 0.5),
+        axis.title.y=element_text(size=10, color = "black"),
+        axis.text.y=element_text(size=10, color = "black"), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=10, color = "black"))+xlab("Baseline Subtraction (Infected-Mock)")
+
+a
+dev.off()
+```
+```{r}
+pdf("results/virus_levels/MERS_virus_proteins_levels_difference.pdf")
+a<- ggplot(table, aes(x=Gene_name, y=Difference_means))+
+  geom_errorbar(aes(ymin=Difference_means-Pooled_sd, ymax=Difference_means+Pooled_sd), width=.2,
+                 position=position_dodge(.9))+ theme_classic()+
+  geom_bar(position=position_dodge(), color="black", stat = "identity", alpha = 1, fill = "#c4cebc")+
+  scale_color_manual(values =c("#ffdfba", "#baffc9", "#bae1ff"))+ 
+  theme(legend.title=element_text(size=10),legend.text=element_text(size=10),
+        legend.key.size=unit(0.7,"line"),plot.title = element_text(hjust = 0.5),
+        axis.title.y=element_text(size=10, color = "black"),axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=10, color = "black"),
+        axis.text.y=element_text(size=10, color = "black"))+xlab("Baseline Subtraction (Infected-Mock)")
+
+a
+dev.off()
+```

@@ -1,0 +1,231 @@
+---
+title: "MERS Proteomics"
+output: html_notebook
+---
+
+### clean environment
+```{r}
+rm(list=ls())
+```
+
+### set directory
+```{r setup}
+    knitr::opts_knit$set(root.dir = normalizePath("~/Desktop/Code-PHD/Proteomics_virus/")) 
+```
+
+```{r}
+library(ggplot2)
+library(limma)
+library(dplyr)
+library(xlsx)
+library(RColorBrewer)
+library(gplots)
+library(ggrepel)
+library(knitr)
+library(ggfortify)
+library(NormalyzerDE)
+library(ropls)
+library(stringr)
+opts_chunk$set(echo = TRUE)
+options(bitmapType="cairo")
+```
+
+```{r}
+source("src/usefull_functions.R")
+```
+
+```{r}
+name_ana <- "SARS"
+input <- "data/SARS/20200818_L1_nUT2_SARS_TMT_Second_experiment.csv"
+
+c_c1 <- "#83adb5"
+c_c2 <- "#c7bbc9"
+c_c3 <- "#8e768a"
+c_c4 <- "#6c797c"
+```
+
+```{r}
+dir.create(paste0("processing/", name_ana))
+```
+
+```{r}
+dir.create("processing/normalization")
+dir.create(paste0("results/", name_ana))
+dir.create(paste0("results/", name_ana, "/figures"))
+dir.create(paste0("results/", name_ana, "/DGE"))
+dir.create(paste0("results/", name_ana, "/GSEA"))
+```
+
+## 1) Pre-processing
+
+```{r}
+data <- read.csv(input)
+data$Description <- NULL
+samples <- data.frame(names = colnames(data)[-1], condition = NA, names_2 = NA)
+
+samples$disease <- ifelse(str_detect(samples$names, "SARS"), "SARS","UNINF")
+samples$time <- ifelse(str_detect(samples$names, "24"), "24","48")
+samples$condition <- paste0(substr(samples$disease, start = 1 , stop = 2), samples$time)
+
+samples$names_2 <- paste0(samples$condition, "_", substr(gsub(".*\\.R", "",samples$names), start = 1, stop = 1)) ## extract run number
+samples
+
+condition <- samples$condition
+
+colnames(data)[-1] <- samples$names_2
+rownames(data) <- data$Accession
+data$Accession <- NULL
+```
+
+## Make annotation_info_file
+```{r}
+annotationInfo <- read.delim("data/annotationInfo_Uniprot_gene_name")
+names(annotationInfo)[1] <- "Accession"
+```
+
+## select Abundances columns
+```{r}
+print(nrow(data))
+data <- data[rowSums(is.na(data)) != ncol(data), ] ## remove empty lines
+print(nrow(data))
+```
+## save files
+```{r}
+save_file_csv(data, "row_data_filt", paste0("processing/", name_ana, "/"))
+
+save_file_csv(samples, "informations", paste0("processing/", name_ana, "/"))
+```
+
+### check for missing values
+```{r}
+counts <- 1:nrow(data) # create vector of appropriate length
+for(i in 1:nrow(data)){
+    # TRUE will be coerced to 1 for the summing
+    counts[i] <- sum(is.na(data[i,]))
+}
+table(counts) # create the summary
+```
+### distribution
+```{r}
+data_2 <-as.matrix(data)
+hist(data_2 , prob=T)
+curve(dnorm(x,mean(data_2),sd(data_2)),add=T,col="red")
+save_figure(data_2, "distribution_", 10, 10)
+```
+
+
+### PCA before norm
+```{r}
+pca_data <- data.frame(group = condition, 
+                       t(as.matrix(data)))
+```
+
+```{r}
+pca_data[is.na(pca_data)] <-  0
+pca <- prcomp(pca_data[,-1])
+```
+
+```{r}
+a <- autoplot(pca, data = pca_data, size= 6, shape = 21, fill = 'group')+  scale_fill_manual(values = c(c_c2, c_c3,c_c1, c_c4))+theme_gray()
+print(a)
+save_figure(a, "pca_before_norm_", 4, 4)
+```
+
+
+### Quantile normalization
+
+```{r}
+path_data <- make_data_matrix(data, name_ana)
+path_design <-make_design_matrix(data, name_ana, condition)
+outDir <- "processing/normalization"
+```
+
+```{r}
+#normalyzer(jobName=name_ana, designPath=path_design, dataPath=path_data, outputDir=outDir)
+```
+```{r}
+path_results_norm <- paste0(outDir, "/", name_ana,"/Quantile-normalized.txt")
+data_norm <- read.delim(path_results_norm)
+rownames(data_norm) <- rownames(data)
+
+path_results <- paste0("processing/norm_files/", name_ana, "_norm_file.txt")
+
+write.table(data_norm, file = path_results, 
+            sep = "\t", row.names = TRUE, col.names = NA)
+```
+processing/normalization/SARS/Quantile-normalized.txt
+
+### PCA after normalization
+```{r}
+pca_data <- data.frame(group = condition, t(as.matrix(data_norm)))
+```
+
+```{r}
+pca_data[is.na(pca_data)] <-  0
+pca <- prcomp(pca_data[,-1])
+```
+
+```{r}
+b <- autoplot(pca, data = pca_data, size= 6, shape = 21, fill = 'group')+ scale_fill_manual(values = c(c_c2, c_c3,c_c1, c_c4))+theme_gray()
+print(b)
+save_figure(b, "pca_after_norm_", 4, 4)
+```
+
+```{r}
+c <- autoplot(pca, data = pca_data, size= 6, fill = 'group', label = TRUE, label.size = 3, shape = FALSE)+ scale_fill_manual(values = c(c_c2, c_c3,c_c1, c_c4))+theme_gray()
+save_figure(c, "pca_after_norm_label", 4, 4)
+```
+
+### distribution after normalization
+```{r}
+data_2 <-as.matrix(data_norm)
+hist(data_2 , prob=T)
+curve(dnorm(x,mean(data_2),sd(data_2)),add=T,col="red")
+save_figure(data_2, "distribution_", 10, 10)
+```
+## Multiple comparisons
+
+## four time points experiments = 
+
+## set levels
+```{r}
+groups <- as.factor(condition)
+design <- model.matrix( ~ 0 + groups)
+colnames(design) <- levels(groups)
+```
+
+## fit model
+```{r}
+fit <- lmFit(data_norm, design)
+```
+
+```{r}
+list_comp <- c("SA48-UN48", "SA24-UN24", "SA48-SA24", "UN48-UN24")
+```
+
+```{r}
+head(data_norm)
+```
+
+```{r}
+for(comp in list_comp){
+  c2 <- substr(comp, 1,4)[1]
+  c1 <- substr(comp, 6,9)[1]
+  dge <- extract_limma(fit, design, name_ana, c1, c2)
+  print(dge)
+  dat <- select(data_norm, contains(c1), contains(c2))
+  clustering_DGE(dat, dge, name_ana, comp, annotationInfo)
+  top_table_up <- dge[dge$Significance_2 == "upregulated",]
+  top_table_down <- dge[dge$Significance_2 == "downregulated",]
+  print(top_table_up)
+  name_up <- paste0("results/",name_ana,"/GSEA/prot_up_regulated_", comp, ".txt")
+  name_down <- paste0("results/",name_ana,"/GSEA/prot_down_regulated_", comp, ".txt")
+  print(name_up)
+  print(name_down)
+  write.table(data.frame(top_table_up$Gene_name), file = name_up, sep = "\t",
+            row.names = FALSE)
+  write.table(data.frame(data = top_table_down$Gene_name), file = name_down, sep = "\t",
+            row.names = FALSE)
+}
+```
+

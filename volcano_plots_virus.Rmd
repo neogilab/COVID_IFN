@@ -1,0 +1,126 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+### clean environment
+```{r}
+rm(list=ls())
+```
+
+### set directory
+```{r setup}
+    knitr::opts_knit$set(root.dir = normalizePath("~/Desktop/Code-PHD/Proteomics_virus/")) 
+```
+
+
+```{r}
+library(scales)
+library(ggplot2)
+library(xlsx)
+library(ggrepel)
+```
+
+```{r}
+
+```
+
+## volcano plot
+```{r}
+mers <- read.xlsx("/home/flomik/Desktop/Code-PHD/Proteomics_virus/results/MERS/DGE/MERS_UNINF_vs_MERS_DGE_results.xlsx",1)
+sars_24 <- read.xlsx("/home/flomik/Desktop/Code-PHD/Proteomics_virus/results/SARS/DGE/SARS_UN24_vs_SA24_DGE_results.xlsx",1)
+sars_48 <- read.xlsx("/home/flomik/Desktop/Code-PHD/Proteomics_virus/results/SARS/DGE/SARS_UN48_vs_SA48_DGE_results.xlsx",1)
+#covid <- read.xlsx("/home/flomik/Desktop/Code-PHD/Proteomics_virus/data/SARS-2/covid-19_proteomics_UNINF_vs_H48PI_DGE_results.xlsx",1)
+covid <- read.xlsx("/home/flomik/Desktop/Code-PHD/Corona_projects/INF_Grant/data/Neogi/DGE/covid-19_proteomics_UNINF_vs_H48PI_DGE_results.xlsx", 1)
+```
+
+```{r}
+#' Save figure as PDF in results
+#'
+#' @param file 
+#' @param name_ana name comparison
+#' @param indice_Gene
+#' @param indice_LogFC 
+#' @param indice_FDR 
+#' @param width width of the figure
+pretty_volcano <- function(file, name_ana, indice_Gene, indice_LogFC, indice_FDR){
+  tt <- file
+  tt$color <- NA
+  print(ncol(tt))
+  for (i in 1:nrow(tt)){
+    if(tt[i, indice_LogFC] > 0.3 & tt[i, indice_FDR] < 0.05){
+      print(tt[i, indice_Gene])
+      tt[i, ncol(tt)] <- "up_regulated"
+    }
+    if(tt[i, indice_LogFC] < -0.3 & tt[i, indice_FDR] < 0.05){
+      print(tt[i, indice_Gene])
+      tt[i, ncol(tt)] <- "down_regulated"
+    }
+    if(tt[i, indice_FDR] > 0.05){
+      tt[i, ncol(tt)] <- "NS"
+      tt[i, indice_Gene] <- NA
+    }
+  }
+  tt$color[is.na(tt$color)] <- "significant"
+  tt$Gene_name[tt$color == "significant"] <- NA
+  cols <- c("up_regulated" = "#cc0000", "down_regulated" = "#1b3651", "NS" = "darkgrey", "significant" = "#ffff99")
+  vol <- ggplot(tt, aes(x = logFC, y = -log10(adj.P.Val), colour = logFC))+ 
+  geom_point(size=2, alpha = 1, na.rm = T, aes(colour=logFC, fill=logFC), 
+  shape = 21,size = 12,colour = "black")+
+  scale_fill_gradientn(colours=c("#1b3651","#527190","white","#ff6666","#cc0000"),
+                         values=rescale(c(min(tt$logFC),min(tt$logFC)/4, 0,max(tt$logFC)/4, max(tt$logFC))), 
+                         space = "Lab")+ 
+  theme(legend.title=element_text(size=2),legend.text=element_text(size=2),
+        legend.key.size=unit(0.7,"line"),plot.title = element_text(hjust = 0.5),
+        axis.title.y=element_text(size=25),axis.title.x=element_text(size=25),
+        axis.text.y=element_text(size=25),axis.text.x=element_text(size=25)) +
+  labs(x="Log2 Fold Change",y="-log10 (adj.P.Val)")+
+  geom_text_repel(aes(label = Gene_name),size=2,label.size = 0.1, color = "black", xlim = c(NA, Inf),
+    # Do not repel from top or bottom edges.
+    ylim = c(-Inf, Inf))+ theme_classic()
+
+  print(vol)
+  path_fig <- paste0("results/volcano_plots/", name_ana, "_volcano_plot_INF.pdf")
+  ggsave(path_fig, width = 4, height = 3)
+  return(tt)
+
+}
+```
+legend.title = element_text( size=2), legend.text=element_text(size=2)
+
++scale_fill_gradient2(low = "#014400",
+midpoint = 0,
+mid = "white",
+high = "#7f0000",
+space="Lab")
+                         
++ scale_fill_gradient2(midpoint = 0, low = "#003300", mid = "#ffffcc",
+                            high = "#800000", space = "Lab" )
+## Filter for interferon
+```{r}
+antiviral <- read.delim("/home/flomik/Desktop/Code-PHD/Corona_projects/INF_Grant/data/databases/step_3/antiviral_mechanism_IFN.tsv")
+antiviral <- gsub(".* ", "", antiviral$MoleculeName)
+inf_alpha_beta <- read.delim("/home/flomik/Desktop/Code-PHD/Corona_projects/INF_Grant/data/databases/step_3/reactome_interferon_alpha_beta.tsv")
+inf_alpha_beta <- gsub(".* ", "", inf_alpha_beta$MoleculeName)
+inf_gamma <- read.delim("/home/flomik/Desktop/Code-PHD/Corona_projects/INF_Grant/data/databases/step_3/reactome_interferon_gamma.tsv")
+inf_gamma <- gsub(".* ", "", inf_gamma$MoleculeName)
+```
+
+```{r}
+inf <- unique(c(antiviral, inf_alpha_beta, inf_gamma))
+```
+
+```{r}
+mers_2 <- mers[mers$Gene_name %in% inf, ]
+sars_24_2 <- sars_24[sars_24$Gene_name %in% inf, ]
+sars_48_2 <- sars_48[sars_48$Gene_name %in% inf, ]
+covid_2 <- covid[covid$Gene_name %in% inf, ]
+```
+
+```{r}
+tt <- pretty_volcano(mers_2, "MERS-CoV 24hpi 3", 3, 4, 8)
+#tt <- pretty_volcano(sars_24_2, "SARS-CoV 24hpi 2", 3, 4, 8)
+tt <- pretty_volcano(sars_48_2, "SARS-CoV 48hpi 3", 3, 4, 8)
+tt <- pretty_volcano(covid_2, "SARS-CoV2 48hpi 3", 3, 4, 8)
+```

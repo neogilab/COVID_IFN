@@ -1,0 +1,734 @@
+---
+title: "COVID interferon"
+output: html_notebook
+---
+
+### clean environment
+```{r}
+rm(list=ls())
+```
+
+### set directory
+```{r setup}
+    knitr::opts_knit$set(root.dir = normalizePath("~/Desktop/Code-PHD/Corona_projects/INF_Grant/")) 
+```
+
+```{r}
+library(ggplot2)
+library(xlsx)
+library(dplyr)
+```
+
+
+
+
+
+```{r}
+library(eulerr)
+```
+```{r}
+pdf("results/figures/Ven_diagram_overlap_neogi_munch.pdf")
+VennDiag <- euler(c("Neogi" = 15, "Munch" = 14, "Neogi&Munch" = 79))
+plot(VennDiag, counts = TRUE, font=1, cex=1, alpha=0.5,
+     fill=c("#7bc043", "#f37736","cornsilk4"), quantities = TRUE)
+dev.off()
+```
+```{r}
+pdf("results/figures/Ven_diagram_overlap_neogi_munch_significant.pdf")
+VennDiag <- euler(c("Neogi" = 49, "Munch" = 16, "Neogi&Munch" = 14))
+plot(VennDiag, counts = TRUE, font=1, cex=1, alpha=0.5,
+     fill=c("#7bc043", "#f37736","cornsilk4"), quantities = TRUE)
+dev.off()
+```
+
+
+## load inf categories
+
+```{r}
+antiviral <- read.delim("/home/flomik/Desktop/Code-PHD/Corona_projects/INF_Grant/data/databases/step_3/antiviral_mechanism_IFN.tsv")
+antiviral <- gsub(".* ", "", antiviral$MoleculeName)
+inf_alpha_beta <- read.delim("/home/flomik/Desktop/Code-PHD/Corona_projects/INF_Grant/data/databases/step_3/reactome_interferon_alpha_beta.tsv")
+inf_alpha_beta <- gsub(".* ", "", inf_alpha_beta$MoleculeName)
+inf_gamma <- read.delim("/home/flomik/Desktop/Code-PHD/Corona_projects/INF_Grant/data/databases/step_3/reactome_interferon_gamma.tsv")
+inf_gamma <- gsub(".* ", "", inf_gamma$MoleculeName)
+```
+
+```{r}
+inf <- unique(c(antiviral, inf_alpha_beta, inf_gamma))
+```
+
+## load covid data Neogi
+```{r}
+neogi <- read.delim("/home/flomik/Desktop/Code-PHD/Corona_projects/INF_Grant/processing/covid-19_proteomics_norm_file.txt")
+neogi <- neogi[,-c(11:13)]
+names(neogi)[1] <- "Accession"
+annotationInfo <- read.csv("/home/flomik/Desktop/Code-PHD/Corona_projects/Corona_omics_2/processing/covid-19_proteomics/covid-19_proteomics_annotationInfo.csv")
+neogi <- merge(neogi, annotationInfo, by = "Accession")
+neogi$Accession <- NULL
+neogi$X <- NULL
+```
+```{r}
+names(neogi)
+```
+
+```{r}
+neogi[-10] <- data.frame(t(scale(t(neogi[-10]))))
+```
+
+
+```{r}
+neogi <- neogi[neogi$Gene_name %in% inf,]
+rownames(neogi) <- neogi$Gene_name
+```
+
+```{r}
+library(reshape2)
+```
+
+```{r}
+nb_samples <- 3
+
+# define conditions
+t0 <- "H24N"
+t24 <- "H24PI"
+t48 <- "H48PI"
+t72 <- "H72PI"
+
+# define associated colors
+c_t0 <- "#B1A78C"
+c_t24 <- "#687E8A"
+c_t48 <- "#41607D"
+c_t72 <- "#09253B"
+
+condition <- as.factor(c(rep(t0, nb_samples), rep(t24, nb_samples), rep(t48, nb_samples)))
+```
+### DGE
+```{r}
+H24_48 <- read.xlsx("/home/flomik/Desktop/Code-PHD/Corona_projects/INF_Grant/data/Neogi/DGE/covid-19_proteomics_H24PI_vs_H48PI_DGE_results_filt.xlsx", 1)
+H0_48 <- read.xlsx("/home/flomik/Desktop/Code-PHD/Corona_projects/INF_Grant/data/Neogi/DGE/covid-19_proteomics_UNINF_vs_H48PI_DGE_results_filt.xlsx", 1)
+H0_24 <- read.xlsx("/home/flomik/Desktop/Code-PHD/Corona_projects/INF_Grant/data/Neogi/DGE/covid-19_proteomics_UNINF_vs_H24PI_DGE_results_filt.xlsx", 1)
+```
+
+## volcano plot
+```{r}
+H0_48_tot <- read.xlsx("/home/flomik/Desktop/Code-PHD/Corona_projects/INF_Grant/data/Neogi/DGE/covid-19_proteomics_UNINF_vs_H48PI_DGE_results.xlsx", 1)
+H0_48_tot <- H0_48_tot[H0_48_tot$Gene_name %in% inf,]
+```
+
+```{r}
+write.csv(H0_48_tot, "processing/neogi_data_signi_0_48.csv")
+```
+
+```{r}
+tt <- H0_48_tot
+
+tt$color <- NA
+
+for (i in 1:nrow(tt)){
+  if(tt[i, 4] > 0.3 & tt[i, 8] < 0.05){
+    tt[i, 10] <- "up_regulated"
+  }
+  if(tt[i, 4] < -0.3 & tt[i, 8] < 0.05){
+    tt[i, 10] <- "down_regulated"
+  }
+  if(tt[i, 8] > 0.05){
+    tt[i, 10] <- "NS"
+    tt[i, 3] <- NA
+  }
+}
+```
+```{r}
+tt$color[is.na(tt$color)] <- "significant"
+tt$Gene_name[tt$color == "significant"] <- NA
+```
+
+## volcano plot ggplot
+
+```{r}
+library(ggrepel)
+```
+```{r}
+names(tt)
+```
+
+# creating color palette
+cols <- c("up_regulated" = "#cc0000", "down_regulated" = "#009933", "NS" = "darkgrey", "significant" = "#ffff99")
+
+# Make a basic ggplot2 object
+```{r}
+names(tt)
+```
+
+```{r}
+path_fig <- paste0("results/volcano_plot_INF_neogi_0_48.pdf")
+pdf(path_fig, height = 5, width = 6)
+vol <- ggplot(tt, aes(x = logFC, y = -log10(adj.P.Val), colour = logFC))+ 
+  geom_point(size=3, alpha = 3, na.rm = T)+ scale_color_gradientn(colors = c("#003300", "#325b32","#668466","#ffffcc","#670000"))+ 
+  theme(legend.title=element_text(size=15),legend.text=element_text(size=6),
+        legend.key.size=unit(0.7,"line"),plot.title = element_text(hjust = 0.5),
+        axis.title.y=element_text(size=15),axis.title.x=element_text(size=15),
+        axis.text.y=element_text(size=18),axis.text.x=element_text(size=18)) +
+  labs(x="Log2 Fold Change",y="-log10 (adj.P.Val)") +
+  xlim(-1.8, 1)+
+  geom_text_repel(aes(label = Gene_name),size=4,label.size = 0.1, color = "black")
+
+vol
+dev.off()
+```
+
+
+```{r}
+H24_48 <- H24_48[H24_48$Gene_name %in% inf,]
+H24_48 <- select(H24_48, Gene_name, logFC)
+
+H0_48 <- H0_48[H0_48$Gene_name %in% inf,]
+H0_48 <- select(H0_48, Gene_name, logFC)
+
+H0_24 <- H0_24[H0_24$Gene_name %in% inf,]
+H0_24 <- select(H0_24, Gene_name, logFC)
+```
+
+```{r}
+names(H24_48)[2] <- "LogFC_24_48"
+names(H0_48)[2] <- "LogFC_0_48"
+names(H0_24)[2] <- "LogFC_0_24"
+```
+
+## volcano plot
+
+```{r}
+
+```
+
+```{r}
+write.csv(H24_48, "results/Neogi_H24_48_INF.csv")
+write.csv(H0_48, "results/Neogi_H0_48_INF.csv")
+write.csv(H0_24, "results/Neogi_H0_24_INF.csv")
+```
+
+```{r}
+input <- merge(neogi, H0_24, by = "Gene_name", all.x = TRUE)
+input <- merge(input, H0_48, by = "Gene_name", all.x = TRUE)
+input <- merge(input, H24_48, by = "Gene_name", all.x = TRUE)
+```
+
+```{r}
+neogi_2 <- data.frame(t(neogi[,-c(10)]), condition = condition)
+neogi_mean <- aggregate(. ~ condition, data = neogi_2, mean)
+rownames(neogi_mean) <- neogi_mean$condition
+neogi_mean$condition <- NULL
+neogi_mean <- data.frame(t(neogi_mean))
+neogi_mean$Gene_name <- rownames(neogi_mean)
+
+```
+## heatmap
+```{r}
+num <- c(input$LogFC_24_48, input$LogFC_0_24, input$LogFC_0_48)
+num <- num[!is.na(num)]
+```
+
+```{r}
+rownames(input) <- input$Gene_name
+```
+
+```{r}
+input$Pathway <- ifelse(input$Gene_name %in% inf_alpha_beta, "Interferon alpha/beta signaling", NA)
+input$Pathway <- ifelse(input$Gene_name %in% inf_gamma, "Interferon gamma signaling", input$Pathway)
+input$Pathway <- ifelse(input$Gene_name %in% antiviral, "Antiviral mechanism by IFN-stimulated genes", input$Pathway)
+```
+
+```{r}
+input <- merge(input, neogi_mean, by = "Gene_name")
+```
+
+```{r}
+rownames(input) <- input$Gene_name
+```
+
+```{r}
+write.table(input$Gene_name, "processing/proteins_neogi_interferon_types.txt", row.names = FALSE, quote=FALSE)
+```
+
+```{r}
+sign_neogi <- rownames(input)[!is.na(input$LogFC_0_48) | !is.na(input$LogFC_24_48)]
+sign_neogi_2 <- rownames(input)[!is.na(input$LogFC_0_48)]
+```
+```{r}
+write.table(sign_neogi, "processing/sign_neogi_inf.txt", row.names = FALSE, quote=FALSE)
+write.table(sign_neogi_2, "processing/sign_neogi_inf_2.txt", row.names = FALSE, quote=FALSE)
+```
+```{r}
+library(circlize)
+library(ComplexHeatmap)
+col_fun_2 = colorRamp2(c(-1.5,  - 0.001 ,0,  0.001, 1.5), c("blue", "#b3ccff","white","#ff9999", "red"))
+
+col_fun1 = colorRamp2(c(-2,-1,-0.5, 0,0.5,1,2), c("#7F7F00","#B2B200" ,"#E5E500","white","#BF7FBF","#993299","#590059"))
+
+col_fun = colorRamp2(c(-2, 0, 2), c("green", "white", "red"))
+```
+```{r}
+condition <- factor(c(rep("Mock", 3), rep("24hpi", 3), rep("48hpi", 3)), levels = c("Mock", "24hpi", "48hpi"))
+```
+
+## PCA
+```{r}
+pca_data <- data.frame(group = condition, t(input[,-c(1, 11:17)]))
+```
+
+```{r}
+pca_data[is.na(pca_data)] <-  0
+pca <- prcomp(pca_data[,-1])
+```
+
+```{r}
+df_out <- as.data.frame(pca$x)
+df_out$group <- pca_data$group
+head(df_out)
+```
+
+```{r}
+ggplot(df_out, aes( x= PC1, y = PC2, fill = group ,color = group))+ geom_point(size = 8, alpha = 0.9, shape = 21, color = "black") + scale_fill_manual(name = "Condition", values=c(c_t0, c_t24, c_t48, c_t72))+
+  stat_ellipse(geom = "polygon", alpha = 0.2, aes(fill = group))+ scale_color_manual(name = "Condition", values=c(c_t0, c_t24, c_t48, c_t72))+ 
+  theme(legend.title=element_text(size=15),legend.text=element_text(size=12),
+        legend.key.size=unit(0.7,"line"),plot.title = element_text(hjust = 0.5),
+        axis.title.y=element_text(size=15),axis.title.x=element_text(size=15),
+        axis.text.y=element_text(size=18),axis.text.x=element_text(size=18))
+
+path_fig <- paste0("results/PCA_IFN.pdf")
+dev.copy(pdf, path_fig, height = 4, width = 6)
+dev.off()
+```
+
+
+```{r}
+pdf("results/figures/Heatmat_neogi_covid_interferon_2.pdf", width = 10, height = 18)
+ht = Heatmap(as.matrix(input[,-c(1, 4, 11:17)]),
+             col = col_fun1,
+             show_row_names = TRUE,
+             column_order = colnames(input)[-c(1, 4, 11:17)],
+             show_column_names = FALSE,
+             column_split = condition[-3],
+             row_split = input$Pathway,row_title_rot = 0,
+             column_title_gp = gpar(fill = c(c_t0, c_t24, c_t48, c_t72)),
+             border = FALSE,
+             column_gap = unit(2, "mm"), 
+             right_annotation = rowAnnotation(Mock_H24 = input$LogFC_0_24,
+                                              Mock_H48 = input$LogFC_0_48,
+                                              H24_H48 = input$LogFC_24_48,
+                                              
+                                              col = list(
+                                                         Mock_H24 = col_fun_2,
+                                                         Mock_H48 = col_fun_2,
+                                                         H24_H48 = col_fun_2
+                                                         ),  show_legend = TRUE, gp = gpar(col = "grey")
+             ))
+
+
+#hm = Heatmap(as.matrix(input[,c(15:17)]), col = col_fun, cluster_rows = FALSE, cluster_columns = FALSE , column_names_rot = 0, column_names_side = "top")
+
+ht_list = ht
+
+draw(ht_list)
+dev.off()
+```
+```{r}
+condition <- factor(c(rep("Mock", 3), rep("24hpi", 3), rep("48hpi", 3)), levels = c("Mock", "24hpi", "48hpi"))
+```
+
+```{r}
+
+
+
+pdf("results/figures/Heatmat_neogi_covid_interferon.pdf", width = 10, height = 18)
+
+
+ht = Heatmap(as.matrix(input[,-c(1, 11:17)]),
+             col = col_fun1,
+             show_row_names = TRUE,
+             column_order = colnames(input)[-c(1, 11:17)],
+             show_column_names = FALSE,
+             column_split = condition,
+             row_split = input$Pathway,row_title_rot = 0,
+             column_title_gp = gpar(fill = c(c_t0, c_t24, c_t48, c_t72)),
+             border = FALSE,
+             column_gap = unit(2, "mm"), 
+             right_annotation = rowAnnotation(
+                                              Mock_H24 = input$LogFC_0_24,
+                                              Mock_H48 = input$LogFC_0_48,
+                                              H24_H48 = input$LogFC_24_48,
+                                              
+                                              col = list(
+                                                         Mock_H24 = col_fun_2,
+                                                         Mock_H48 = col_fun_2,
+                                                         H24_H48 = col_fun_2
+                                                         ),  show_legend = TRUE, gp = gpar(col = "grey")
+             ))
+
+
+#hm = Heatmap(as.matrix(input[,c(15:17)]), col = col_fun, cluster_rows = FALSE, cluster_columns = FALSE , column_names_rot = 0, column_names_side = "top")
+
+ht_list = ht
+
+draw(ht_list)
+dev.off()
+```
+
+```{r}
+
+
+
+pdf("results/figures/Heatmat_neogi_covid_interferon.pdf", width = 10, height = 18)
+
+
+ht = Heatmap(as.matrix(input[,-c(1, 11:17)]),
+             col = col_fun1,
+             show_row_names = TRUE,
+             column_order = colnames(input)[-c(1, 11:17)],
+             show_column_names = FALSE,
+             column_split = condition,
+             row_split = input$Pathway,row_title_rot = 0,
+             column_title_gp = gpar(fill = c(c_t0, c_t24, c_t48, c_t72)),
+             border = FALSE,
+             column_gap = unit(2, "mm"), 
+             right_annotation = rowAnnotation(Mean_Mock = input$H24N,
+                                              Mean_H24 = input$H24PI,
+                                              Mean_H48 = input$H48PI,
+                                              Mock_H24 = input$LogFC_0_24,
+                                              Mock_H48 = input$LogFC_0_48,
+                                              H24_H48 = input$LogFC_24_48,
+                                              
+                                              col = list(Mean_Mock = col_fun1,
+                                                         Mean_H24 = col_fun1,
+                                                         Mean_H48 = col_fun1,
+                                                         Mock_H24 = col_fun_2,
+                                                         Mock_H48 = col_fun_2,
+                                                         H24_H48 = col_fun_2
+                                                         ),  show_legend = FALSE, gp = gpar(col = "grey")
+             ))
+
+
+#hm = Heatmap(as.matrix(input[,c(15:17)]), col = col_fun, cluster_rows = FALSE, cluster_columns = FALSE , column_names_rot = 0, column_names_side = "top")
+
+ht_list = ht
+
+draw(ht_list)
+dev.off()
+```
+```{r}
+colnames(input)
+```
+
+## load covid data Munch
+
+## Data
+```{r}
+nb_samples <- 3
+
+# define conditions
+t2_U <- "UNIF02"
+t6_U <- "UNIF06"
+t10_U <- "UNIF10"
+t24_U <- "UNIF24"
+
+t2_I <- "H02PI"
+t6_I <- "H06PI"
+t10_I <- "H10PI"
+t24_I <- "H24PI"
+```
+
+```{r}
+condition <- as.factor(c(rep(t2_U, nb_samples), rep(t6_U , nb_samples),
+                         rep(t10_U, nb_samples), rep(t24_U , nb_samples),
+                         rep(t2_I, nb_samples), rep(t6_I, nb_samples),
+                         rep(t10_I, nb_samples), rep(t24_I, nb_samples)))
+```
+
+```{r}
+input <- read.xlsx("/home/flomik/Desktop/Code-PHD/Corona_projects/Corona_omics_2/data/Corona_Munch/Supplementary Table 02.xlsx", 2)
+rownames(input) <- input$UniProt.Accession
+input_t_test <- input[,c(31:34)]
+annotationInfo <- select(input, UniProt.Accession, Gene.Symbol)
+names(annotationInfo)[1] <- "Accession"
+names(annotationInfo)[2] <- "Gene_name"
+input <- input[,c(2:26)]
+input[,-1] <- data.frame(t(scale(t(input[,-1]))))
+input <- input[!duplicated(input$Gene.Symbol),]
+input <- input[!is.na(input$Gene.Symbol),]
+rownames(input) <- input$Gene.Symbol
+```
+
+```{r}
+input <- input[input$Gene.Symbol %in% inf,]
+input$Gene.Symbol <- NULL
+```
+
+```{r}
+input
+```
+
+
+## DGE
+```{r}
+h2 <- read.xlsx("/home/flomik/Desktop/Code-PHD/Corona_projects/INF_Grant/data/Munch/DGE/Corona_munch_UNIF02_vs_H02PI_DGE_results_filt.xlsx", 1)
+h6 <- read.xlsx("/home/flomik/Desktop/Code-PHD/Corona_projects/INF_Grant/data/Munch/DGE/Corona_munch_UNIF06_vs_H06PI_DGE_results_filt.xlsx", 1)
+h10 <- read.xlsx("/home/flomik/Desktop/Code-PHD/Corona_projects/INF_Grant/data/Munch/DGE/Corona_munch_UNIF10_vs_H10PI_DGE_results_filt.xlsx", 1)
+h24 <- read.xlsx("/home/flomik/Desktop/Code-PHD/Corona_projects/INF_Grant/data/Munch/DGE/Corona_munch_UNIF24_vs_H24PI_DGE_results_filt.xlsx", 1)
+h2_24_inf <- read.xlsx("/home/flomik/Desktop/Code-PHD/Corona_projects/INF_Grant/data/Munch/DGE/Corona_munch_H02PI_vs_H24PI_DGE_results_filt.xlsx", 1)
+```
+
+```{r}
+h2 <- h2[h2$Gene_name %in% inf,]
+h2 <- select(h2, Gene_name, logFC)
+names(h2)[2] <- "LF_h2"
+
+h6 <- h6[h6$Gene_name %in% inf,]
+h6 <- select(h6, Gene_name, logFC)
+names(h6)[2] <- "LF_h6"
+
+h10 <- h10[h10$Gene_name %in% inf,]
+h10 <- select(h10, Gene_name, logFC)
+names(h10)[2] <- "LF_h10"
+
+h24 <- h24[h24$Gene_name %in% inf,]
+h24 <- select(h24, Gene_name, logFC)
+names(h24)[2] <- "LF_h24"
+
+h2_24_inf <- h2_24_inf[h2_24_inf$Gene_name %in% inf,]
+h2_24_inf <- select(h2_24_inf, Gene_name, logFC)
+names(h2_24_inf)[2] <- "LF_h2_24_inf"
+```
+
+```{r}
+write.csv(h2, "results/Munch_H2.csv")
+write.csv(h6, "results/Munch_H6.csv")
+write.csv(h10, "results/Munch_H10.csv")
+write.csv(h24, "results/Munch_H24.csv")
+write.csv(h2_24_inf, "results/Munch_H2_24INF.csv")
+```
+
+```{r}
+input$Gene_name <- rownames(input)
+input <- merge(input, h2, by = "Gene_name", all.x = TRUE)
+input <- merge(input, h6, by = "Gene_name", all.x = TRUE)
+input <- merge(input, h10, by = "Gene_name", all.x = TRUE)
+input <- merge(input, h24, by = "Gene_name", all.x = TRUE)
+input <- merge(input, h2_24_inf, by = "Gene_name", all.x = TRUE)
+```
+
+
+```{r}
+input_2 <- data.frame(t(input[,c(2:25)]), condition = condition)
+input_mean <- aggregate(. ~ condition, data = input_2, mean)
+colnames(input_mean)[-1] <- input$Gene_name
+rownames(input_mean) <- input_mean$condition
+input_mean$condition <- NULL
+input_mean <- data.frame(t(input_mean))
+input_mean$Gene_name <- rownames(input_mean)
+```
+
+
+```{r}
+write.table(input$Gene_name, "processing/proteins_Munch_interferon_types.txt", row.names = FALSE, quote=FALSE)
+```
+## heatmap
+
+```{r}
+num <- c(input$LF_h2, input$LF_h10, input$LF_h24, input$LF_h6, input$LF_h2_24_inf)
+num <- num[!is.na(num)]
+```
+
+```{r}
+rownames(input) <- input$Gene_name
+```
+
+```{r}
+input$Pathway <- ifelse(input$Gene_name %in% inf_alpha_beta, "Interferon alpha/beta signaling", NA)
+input$Pathway <- ifelse(input$Gene_name %in% inf_gamma, "Interferon gamma signaling", input$Pathway)
+input$Pathway <- ifelse(input$Gene_name %in% antiviral, "Antiviral mechanism by IFN-stimulated genes", input$Pathway)
+```
+
+
+```{r}
+input <- merge(input, input_mean, by = "Gene_name")
+```
+
+```{r}
+rownames(input) <- input$Gene_name
+```
+
+```{r}
+input_2 <- input[,-c(1, 26:39)]
+```
+```{r}
+names(input_2)
+```
+```{r}
+condition <- factor(condition, levels = c("UNIF02", "UNIF06", "UNIF10", "UNIF24", "H02PI", "H06PI", "H10PI", "H24PI"))
+```
+
+```{r}
+library(circlize)
+library(ComplexHeatmap)
+col_fun_2 = colorRamp2(c(min(num),  - 0.001 ,0,  0.001, max(num)), c("blue", "#b3ccff","white","#ff9999", "red"))
+col_fun = colorRamp2(c(-2, 0, 2), c("green", "white", "red"))
+```
+
+```{r}
+pdf("results/figures/Heatmat_Munch_covid_interferon_types.pdf", width = 15, height = 18)
+
+
+ht = Heatmap(as.matrix(input_2),
+             col = col_fun1,
+             show_row_names = TRUE,
+             column_order = colnames(input_2),
+             show_column_names = FALSE,
+             column_split = condition,
+             row_split = input$Pathway,
+             column_title_gp = gpar(fill = c(rep("white", 4), c_t0, c_t24, c_t48, c_t72)),
+             border = FALSE,row_title_rot = 0,
+             column_gap = unit(2, "mm"), 
+             right_annotation = rowAnnotation(H2 = input$LF_h2,
+                                              H6 = input$LF_h6, 
+                                              H10 = input$LF_h10, 
+                                              H24 = input$LF_h24, 
+                                              H2_24INf = input$LF_h2_24_inf,
+                                              Mean_unif_2 = input$UNIF02,
+                                              Mean_unif_6 = input$UNIF06,
+                                              Mean_unif_10 = input$UNIF10,
+                                              Mean_unif_24 = input$UNIF24,
+                                              Mean_if_2 = input$H02PI,
+                                              Mean_if_6 = input$H06PI,
+                                              Mean_if_10 = input$H10PI,
+                                              Mean_if_24 = input$H24PI,
+                                              col = list(H2 = col_fun_2,
+                                                         H6 = col_fun_2,
+                                                         H10 = col_fun_2,
+                                                         H24 = col_fun_2,
+                                                         H2_24INf = col_fun_2,
+                                                         Mean_unif_2 = col_fun1,
+                                                         Mean_unif_6 = col_fun1,
+                                                         Mean_unif_10 = col_fun1,
+                                                         Mean_unif_24 = col_fun1, 
+                                                         Mean_if_2 = col_fun1,
+                                                         Mean_if_6 = col_fun1,
+                                                         Mean_if_10 = col_fun1,
+                                                         Mean_if_24 = col_fun1)
+                                              ,  show_legend = FALSE, gp = gpar(col = "grey")))
+
+
+#hm = Heatmap(as.matrix(input[,c(15:17)]), col = col_fun, cluster_rows = FALSE, cluster_columns = FALSE , column_names_rot = 0, column_names_side = "top")
+
+ht_list = ht
+
+draw(ht_list)
+dev.off()
+```
+```{r}
+sign_munch <- rownames(input)[!is.na(input$LF_h6) | !is.na(input$LF_h24) | !is.na(input$LF_h2_24_inf)]
+```
+
+```{r}
+sign_munch_2 <- rownames(input)[!is.na(input$LF_h2_24_inf)]
+```
+
+```{r}
+write.csv(sign_munch, "processing/sign_munch_inf.csv")
+```
+```{r}
+write.table(sign_munch, "processing/sign_munch_inf.txt", row.names = FALSE, quote=FALSE)
+write.table(sign_munch_2, "processing/sign_munch_inf_2.txt", row.names = FALSE, quote=FALSE)
+```
+
+
+### Do bubble plots pathways
+
+```{r}
+munch <- read.delim("/home/flomik/Desktop/Code-PHD/Corona_projects/INF_Grant/results/GSEA/Munch_interferon_types.txt")
+munch <- munch[munch$Adjusted.P.value < 0.1,]
+munch <- munch[order(munch$Adjusted.P.value),]
+munch <- munch[1:15,]
+
+neogi <- read.delim("/home/flomik/Desktop/Code-PHD/Corona_projects/INF_Grant/results/GSEA/Neogi_interferon_types.txt")
+neogi <- neogi[neogi$Adjusted.P.value < 0.05,]
+neogi <- neogi[order(neogi$Adjusted.P.value),]
+neogi <- neogi[1:15,]
+```
+
+```{r}
+
+```
+
+```{r}
+table <- neogi
+table$Overlap <- gsub("\\/.*","",table$Overlap)
+table$Overlap <- as.numeric(table$Overlap)
+table$value <- 50
+table <- table[order(table$Adjusted.P.value, decreasing = TRUE),]
+position <- table$Term
+```
+```{r}
+a <- ggplot(table, aes(x = value, y = Term, size = Overlap, fill = Adjusted.P.value))+ geom_point(shape = 21)+ scale_x_continuous(limits=c(49, 51))+scale_y_discrete(limits = position, position = "right")
+a + theme(axis.line=element_blank(),axis.text.x=element_blank(),axis.ticks=element_blank(),
+          axis.title.x=element_blank(),
+          axis.title.y=element_blank(),
+          panel.background=element_blank(),panel.border=element_blank(),panel.grid.major=element_blank(),
+          panel.grid.minor=element_blank(),plot.background=element_blank(), axis.text.y = element_text(size=13, color = "black"))+ coord_cartesian(xlim = c(49, 50.05), expand = TRUE) +
+    scale_size(range = c(4, 9), name="Proteins number")+ scale_fill_viridis_b(option = "plasma")
+
+#a < a + scale_color_gradient2()
+
+ggsave("results/figures/bubble_plot_pathways_neogi_interferon_terms.pdf")
+```
+
+```{r}
+table <- munch
+table$Overlap <- gsub("\\/.*","",table$Overlap)
+table$Overlap <- as.numeric(table$Overlap)
+table$value <- 50
+table <- table[order(table$Adjusted.P.value, decreasing = TRUE),]
+position <- table$Term
+```
+```{r}
+a <- ggplot(table, aes(x = value, y = Term, size = Overlap, fill = Adjusted.P.value))+ geom_point(shape = 21)+ scale_x_continuous(limits=c(49, 51))+scale_y_discrete(limits = position, position = "right")
+a + theme(axis.line=element_blank(),axis.text.x=element_blank(),axis.ticks=element_blank(),
+          axis.title.x=element_blank(),
+          axis.title.y=element_blank(),
+          panel.background=element_blank(),panel.border=element_blank(),panel.grid.major=element_blank(),
+          panel.grid.minor=element_blank(),plot.background=element_blank(), axis.text.y = element_text(size=13, color = "black"))+ coord_cartesian(xlim = c(49, 50.05), expand = TRUE) +
+    scale_size(range = c(4, 9), name="Proteins number")+ scale_fill_viridis_b(option = "plasma")
+
+#a < a + scale_color_gradient2()
+
+ggsave("results/figures/bubble_plot_pathways_munch_interferon_terms.pdf")
+```
+
+```{r}
+library(reshape2)
+```
+
+```{r}
+data <- data.frame(t(input), condition = condition, samples = colnames(input))
+
+data_2 <- melt(data, id.vars = c("condition", "samples"))
+data_2$Group[data_2$variable %in% rig] <- j
+data_2$Group[data_2$variable %in% antiv] <- n
+```
+
+
+```{r}
+library(viridis)
+```
+
+## heatmap corona
+```{r}
+a <- ggplot(data_2, aes(y = variable, x = samples, fill = log2(1 + value)))+ geom_tile()+ 
+  labs(title="", x="", y="", fill="")+facet_grid(Group ~ condition, scales='free', space="free")+
+  scale_fill_viridis()+
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.text.y = element_text(color = "black", size = 11, face = "plain"))
+ggsave("results/figures/heatmap_interferon_step_1.pdf", height = 20, width = 15)
+a
+```
+
